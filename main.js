@@ -1,9 +1,6 @@
 import './style.css'
 import * as Three from 'three';
 import { Mesh } from 'three';
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 
 const scene = new Three.Scene();
 scene.add(new Three.AmbientLight(0x555555));
