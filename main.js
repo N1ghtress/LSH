@@ -1,6 +1,23 @@
 import './style.css'
 import * as Three from 'three';
-import { Mesh } from 'three';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+
+const ENTIRE_SCENE = 0, BLOOM_SCENE = 1;
+
+const bloomLayer = new Three.Layers();
+bloomLayer.set(BLOOM_SCENE);
+
+const params = {
+	bloomStrength: 3,
+	bloomThreshold: 0,
+	bloomRadius: 1
+};
+
+const darkMaterial = new Three.MeshBasicMaterial({ color: "black" });
+const materials = {};
 
 const scene = new Three.Scene();
 scene.add(new Three.AmbientLight(0x555555));
@@ -14,6 +31,51 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 const canvas = renderer.domElement;
 document.body.appendChild(canvas);
 
+const renderScene = new RenderPass(scene, camera)
+
+const bloomPass = new UnrealBloomPass(new Three.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+bloomPass.threshold = params.bloomThreshold;
+bloomPass.strength = params.bloomStrength;
+bloomPass.radius = params.bloomRadius;
+
+const bloomComposer = new EffectComposer(renderer);
+bloomComposer.renderToScreen = false;
+bloomComposer.addPass(renderScene);
+bloomComposer.addPass(bloomPass);
+
+const finalPass = new ShaderPass(
+	new Three.ShaderMaterial({
+		uniforms: {
+			baseTexture: { value: null },
+			bloomTexture: { value: bloomComposer.renderTarget2.texture }
+		},
+		vertexShader: `
+			varying vec2 vUv;
+
+			void main() {
+				vUv = uv;
+				gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+			}
+		`,
+		fragmentShader: `
+			uniform sampler2D baseTexture;
+			uniform sampler2D bloomTexture;
+
+			varying vec2 vUv;
+
+			void main() {
+				gl_FragColor = ( texture2D( baseTexture, vUv ) + vec4( 1.0 ) * texture2D( bloomTexture, vUv ) );
+			}
+		`,
+		defines: {}
+	}), "baseTexture"
+);
+finalPass.needsSwap = true;
+
+const finalComposer = new EffectComposer(renderer);
+finalComposer.addPass(renderScene);
+finalComposer.addPass(finalPass);
+
 window.onresize = function () {
 	const width = window.innerWidth;
 	const height = window.innerHeight;
@@ -22,6 +84,11 @@ window.onresize = function () {
 	camera.updateProjectionMatrix();
 
 	renderer.setSize(width, height);
+
+	bloomComposer.setSize(width, height);
+	finalComposer.setSize(width, height);
+
+	render();
 };
 
 sceneSetup();
@@ -71,9 +138,9 @@ function sceneSetup() {
 	scene.add(sun);
 
 	// Sun animation
-	rectYVel = 0.1;
+	rectYVel = 0.2;
 	initialHeight = 0;
-	heightDelta = 0.01;
+	heightDelta = rectYVel / 10;
 	rectHeightTab = [0, 1.2, 2.4, 3.6, 4.8];
 
 	const blackMat = new Three.MeshBasicMaterial({
@@ -83,10 +150,10 @@ function sceneSetup() {
 
 	const rect = new Three.PlaneGeometry(120, 1);
 
-	blackRectTab = [new Mesh(rect, blackMat), new Mesh(rect, blackMat), new Mesh(rect, blackMat), new Mesh(rect, blackMat), new Mesh(rect, blackMat)]
+	blackRectTab = [new Three.Mesh(rect, blackMat), new Three.Mesh(rect, blackMat), new Three.Mesh(rect, blackMat), new Three.Mesh(rect, blackMat), new Three.Mesh(rect, blackMat)]
 	for (let i = 0; i < blackRectTab.length; i++) {
 		const rect = blackRectTab[i];
-		rect.position.set(0, sunCenterY - (2 * 60 * rectYVel * i), -100);
+		rect.position.set(0, sunCenterY - ((sunRadius / blackRectTab.length + 1) * i), -100);
 		scene.add(rect);
 	}
 
@@ -103,6 +170,7 @@ function sceneSetup() {
 		const gridLine = new Three.BufferGeometry().setFromPoints(points);
 
 		const neonLine = new Three.Line(gridLine, pinkLineMat);
+		neonLine.layers.enable(BLOOM_SCENE);
 		scene.add(neonLine);
 	}
 	for (let x = -500; x <= 500; x += 10) {
@@ -113,6 +181,7 @@ function sceneSetup() {
 		const gridLine = new Three.BufferGeometry().setFromPoints(points);
 
 		const neonLine = new Three.Line(gridLine, pinkLineMat);
+		neonLine.layers.enable(BLOOM_SCENE);
 		scene.add(neonLine);
 	}
 
@@ -131,7 +200,28 @@ function render() {
 		}
 		rect.position.y -= rectYVel;
 	}
-
-	renderer.render(scene, camera);
+	renderBloom();
+	finalComposer.render();
 	requestAnimationFrame(render);
+}
+
+function renderBloom() {
+	scene.traverse(darkenNonBloomed);
+	bloomComposer.render();
+	scene.traverse(restoreMaterial);
+
+}
+
+function darkenNonBloomed(obj) {
+	if (obj.isMesh && bloomLayer.test(obj.layers) === false) {
+		materials[obj.uuid] = obj.material;
+		obj.material = darkMaterial;
+	}
+}
+
+function restoreMaterial(obj) {
+	if (materials[obj.uuid]) {
+		obj.material = materials[obj.uuid];
+		delete materials[obj.uuid];
+	}
 }
