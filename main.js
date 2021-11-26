@@ -93,8 +93,6 @@ window.onresize = function () {
 
 	bloomComposer.setSize(width, height);
 	finalComposer.setSize(width, height);
-
-	render();
 };
 
 sceneSetup();
