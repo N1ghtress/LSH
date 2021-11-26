@@ -4,13 +4,16 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { SSAARenderPass } from 'three/examples/jsm/postprocessing/SSAARenderPass.js';
 
-const ENTIRE_SCENE = 0, BLOOM_SCENE = 1;
+const BLOOM_SCENE = 1;
 
 const bloomLayer = new Three.Layers();
 bloomLayer.set(BLOOM_SCENE);
 
 const params = {
+	sampleLevel: 2,
+	unbiased: true,
 	bloomStrength: 3,
 	bloomThreshold: 0,
 	bloomRadius: 1
@@ -25,7 +28,7 @@ scene.add(new Three.AmbientLight(0x555555));
 const camera = new Three.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 250);
 camera.position.set(0, 10, 100);
 
-const renderer = new Three.WebGLRenderer({ antialias: true });
+const renderer = new Three.WebGLRenderer();
 renderer.setPixelRatio(window.devicePixelRatio);
 renderer.setSize(window.innerWidth, window.innerHeight);
 const canvas = renderer.domElement;
@@ -43,7 +46,7 @@ bloomComposer.renderToScreen = false;
 bloomComposer.addPass(renderScene);
 bloomComposer.addPass(bloomPass);
 
-const finalPass = new ShaderPass(
+const restorePass = new ShaderPass(
 	new Three.ShaderMaterial({
 		uniforms: {
 			baseTexture: { value: null },
@@ -70,11 +73,14 @@ const finalPass = new ShaderPass(
 		defines: {}
 	}), "baseTexture"
 );
-finalPass.needsSwap = true;
+restorePass.needsSwap = true;
+
+const ssaaRenderPass = new SSAARenderPass(scene, camera);
 
 const finalComposer = new EffectComposer(renderer);
 finalComposer.addPass(renderScene);
-finalComposer.addPass(finalPass);
+finalComposer.addPass(ssaaRenderPass);
+finalComposer.addPass(restorePass);
 
 window.onresize = function () {
 	const width = window.innerWidth;
@@ -200,16 +206,14 @@ function render() {
 		}
 		rect.position.y -= rectYVel;
 	}
-	renderBloom();
-	finalComposer.render();
-	requestAnimationFrame(render);
-}
 
-function renderBloom() {
+	ssaaRenderPass.sampleLevel = params.sampleLevel;
+	ssaaRenderPass.unbiased = params.unbiased;
 	scene.traverse(darkenNonBloomed);
 	bloomComposer.render();
 	scene.traverse(restoreMaterial);
-
+	finalComposer.render();
+	requestAnimationFrame(render);
 }
 
 function darkenNonBloomed(obj) {
