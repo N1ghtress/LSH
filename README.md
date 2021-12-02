@@ -1,6 +1,6 @@
-# lsh
+# LSH
 
-## setup & launch
+## Setup & Launch
 ```console
 npm install
 npm run dev
